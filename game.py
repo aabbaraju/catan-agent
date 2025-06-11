@@ -18,6 +18,7 @@ class Game:
         self.has_rolled = {player.name: False for player in self.players}
         self.robber_tile = None
         self.last_roll = None
+        self.robber_pending = False
 
     COSTS = {
     'settlement': {'wood': 1, 'brick': 1, 'sheep': 1, 'wheat': 1},
@@ -85,6 +86,7 @@ class Game:
 
             from catanboardVisualizer import render_board
             render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+            self.robber_pending = False
 
             fig.canvas.mpl_disconnect(cid)
 
@@ -104,6 +106,20 @@ class Game:
         self.has_rolled = {player.name: True for player in self.players}
         self.game_over = True
         print("Game Over: No further actions can be taken.")
+
+    def bank_trade(self, give_resource, receive_resource):
+        if self.current_player.resources.get(give_resource, 0) < 4:
+            print(f"Not enough {give_resource} to trade.")
+            return False
+
+        if give_resource == receive_resource:
+            print("You must choose a different resource to receive.")
+            return False
+
+        self.current_player.resources[give_resource] -= 4
+        self.current_player.resources[receive_resource] += 1
+        print(f"{self.current_player.name} traded 4 {give_resource} for 1 {receive_resource}.")
+        return True
 
     def _discard_half_resources(self):
         for player in self.players:
@@ -198,6 +214,7 @@ class Game:
         if roll_val == 7:
             print(f"{self.current_player.name} rolled a 7! Moving the robber.")
             self._discard_half_resources()
+            self.robber_pending = True
             self._handle_robber(fig, ax)
             return
         
@@ -220,6 +237,8 @@ class Game:
                         elif node_id in player.cities:
                             player.add_resource(resource, 2)
                             print(f"{player.name} receives 2 {resource} from city on node {node_id}")
+        from catanboardVisualizer import render_board
+        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)       
     
     def pass_turn(self, fig, ax):
         if not self.turn_order_determined:
@@ -232,6 +251,9 @@ class Game:
 
         if not self.has_rolled[self.current_player.name]:
             print("You must roll before passing.")
+            return
+        if self.robber_pending:
+            print("You must move the robber before ending your turn.")
             return
 
         self.current_index = (self.current_index + 1) % len(self.players)
@@ -446,10 +468,45 @@ if __name__ == "__main__":
     from player import Player
     from game import Game
     from catanboardVisualizer import render_board
+    import matplotlib.pyplot as plt
+    from matplotlib.widgets import TextBox, Button
 
     player1 = Player("Red")
     player2 = Player("Blue")
 
     game = Game([player1, player2], tiles, G)
 
-    render_board(G, tiles, on_node_click=game.handle_node_click, game=game)
+    fig, ax = plt.subplots(figsize=(10, 8))
+    plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.25)
+
+    ax_give = plt.axes([0.52, 0.03, 0.1, 0.04])
+    ax_receive = plt.axes([0.72, 0.03, 0.1, 0.04])
+
+    bank_give_box = TextBox(ax_give, 'Give (4x):')
+    bank_receive_box = TextBox(ax_receive, 'Receive (1x):')
+
+    game.bank_give_box = bank_give_box
+    game.bank_receive_box = bank_receive_box
+
+    ax_btn_trade = plt.axes([0.84, 0.03, 0.1, 0.04])
+    btn_trade = Button(ax_btn_trade, '4:1 Trade')
+
+    def bank_trade_prompt(event):
+        give = game.bank_give_box.text.strip().lower()
+        receive = game.bank_receive_box.text.strip().lower()
+
+        if give == receive:
+            print("You must choose a different resource to receive.")
+            return
+
+        success = game.bank_trade(give, receive)
+        if success:
+            game.bank_give_box.set_val("")
+            game.bank_receive_box.set_val("")
+            from catanboardVisualizer import render_board
+            render_board(game.G, game.tiles, game=game, fig=fig, ax=ax, redraw_only=True)
+
+    btn_trade.on_clicked(bank_trade_prompt)
+
+    render_board(G, tiles, on_node_click=game.handle_node_click, game=game, fig=fig, ax=ax)
+    plt.show()

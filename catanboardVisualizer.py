@@ -3,6 +3,7 @@ import matplotlib.patches as patches
 import networkx as nx
 import math
 import matplotlib.widgets as widgets
+from matplotlib.widgets import TextBox
 
 resource_colors = {
     'wheat': '#F9DC5C',
@@ -213,7 +214,7 @@ def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, red
     btn_city = widgets.Button(button_ax3, 'Place City')
     btn_roll = widgets.Button(button_ax4, 'Roll')
     btn_pass = widgets.Button(button_ax5, 'Pass Turn')
-
+    
     def set_settlement(event):
         game.build_mode = 'settlement'
         print("Build mode: Settlement")
@@ -238,6 +239,7 @@ def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, red
     btn_city.on_clicked(set_city)
     btn_roll.on_clicked(roll)   
     btn_pass.on_clicked(pass_turn)
+    
 
     plt.axis('off')
     plt.tight_layout()
