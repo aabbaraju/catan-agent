@@ -10,6 +10,8 @@ class Player:
         }
         self.settlements = set()
         self.cities = set()
+        self.roads = set()
+        
     def add_resource(self, resource, amount):
         if resource in self.resources:
             self.resources[resource]  += amount

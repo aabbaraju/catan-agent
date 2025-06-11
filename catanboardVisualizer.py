@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import networkx as nx
 import math
+import matplotlib.widgets as widgets
 
 resource_colors = {
     'wheat': '#F9DC5C',
@@ -43,6 +44,27 @@ def draw_settlement(ax, x, y, color):
     ax.add_patch(square)
     ax.add_patch(triangle)
 
+def draw_city(ax, x, y, color):
+    base_width = 0.25
+    base_height = 0.2
+    tower_width = 0.15
+    tower_height = 0.25
+
+    base = patches.Rectangle(
+        (x - base_width/2, y - base_height/2),
+        base_width, base_height,
+        facecolor=color, edgecolor='black', zorder=10
+    )
+
+    tower = patches.Rectangle(
+        (x - tower_width/2, y),
+        tower_width, tower_height,
+        facecolor=color, edgecolor='black', zorder=11
+    )
+
+    ax.add_patch(base)
+    ax.add_patch(tower)
+
 def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, redraw_only=False):
     if not fig or not ax:
         fig, ax = plt.subplots(figsize=(10, 10))
@@ -80,40 +102,84 @@ def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, red
                 x, y = G.nodes[node_id]['coordinates']
                 draw_settlement(ax, x, y, player.name.lower())
                 ax.text(x, y + 0.2, f"{player.name}", color='black', fontsize=9, ha='center', zorder=11)
+            
+            for node_id in player.cities:
+                x, y = G.nodes[node_id]['coordinates']
+                draw_city(ax, x, y, player.name.lower())
+                ax.text(x, y + 0.35, 'City', color='black', fontsize=8, ha='center', zorder=12)
+            
+            for node1, node2 in player.roads:
+                x1, y1 = G.nodes[node1]['coordinates']
+                x2, y2 = G.nodes[node2]['coordinates']
+                ax.plot([x1, x2], [y1, y2], color=player.name.lower(), linewidth=3, zorder=5)
 
+    clicked_nodes = []
+
+    def on_click(event):
+
+        if event.inaxes != ax or not hasattr(game, 'build_mode') or game.build_mode is None:
+            print("Select a build mode first.")
+            return
+
+        click_x, click_y = event.xdata, event.ydata
+        threshold = 0.2
+        closest_node = None
+        min_dist = float('inf')
+        for node_id, (x, y) in pos.items():
+            dist = ((x - click_x) ** 2 + (y - click_y) ** 2) ** 0.5
+            if dist < threshold and dist < min_dist:
+                closest_node = node_id
+                min_dist = dist
+
+        if closest_node is not None:
+            clicked_nodes.append(closest_node)
+            if game.build_mode == 'road' and len(clicked_nodes) == 2:
+                node1, node2 = clicked_nodes
+                clicked_nodes.clear()
+                if on_node_click:
+                    on_node_click((node1, node2), fig, ax)
+            elif game.build_mode in ['settlement', 'city']:
+                if on_node_click:
+                    on_node_click(closest_node, fig, ax)
+
+    fig.canvas.mpl_connect('button_press_event', on_click)
+
+    button_ax1 = plt.axes([0.86, 0.84, 0.12, 0.05])
+    button_ax2 = plt.axes([0.86, 0.77, 0.12, 0.05])
+    button_ax3 = plt.axes([0.86, 0.7, 0.12, 0.05])
+    button_ax4 = plt.axes([0.86, 0.63, 0.14, 0.05])
+
+    btn_settlement = widgets.Button(button_ax1, 'Place Settlement')
+    btn_road = widgets.Button(button_ax2, 'Place Road')
+    btn_city = widgets.Button(button_ax3, 'Place City')
+    btn_pass = widgets.Button(button_ax4, 'Pass Turn')
+
+    def set_settlement(event):
+        game.build_mode = 'settlement'
+        print("Build mode: Settlement")
+
+    def set_road(event):
+        game.build_mode = 'road'
+        print("Build mode: Road")
+    
+    def set_city(event):
+        game.build_mode = 'city'
+        print("Build mode: City")
+
+    def pass_turn(event):
+        game.current_index = (game.current_index + 1) % len(game.players)
+        print(f"{game.current_player.name}'s turn")
+        render_board(G, tiles, on_node_click=game.handle_node_click, game=game, fig=fig, ax=ax, redraw_only=True)
+        game.build_mode = None
+
+    btn_settlement.on_clicked(set_settlement)
+    btn_road.on_clicked(set_road)
+    btn_city.on_clicked(set_city)
+    btn_pass.on_clicked(pass_turn)
+
+    plt.axis('off')
+    plt.tight_layout()
     if not redraw_only:
-        def on_click(event):
-            if event.inaxes != ax:
-                return
-            click_x, click_y = event.xdata, event.ydata
-            threshold = 0.2
-            closest_node = None
-            min_dist = float('inf')
-
-            for node_id, (x, y) in pos.items():
-                dist = ((x - click_x)**2 + (y - click_y)**2)**0.5
-                if dist < threshold and dist < min_dist:
-                    closest_node = node_id
-                    min_dist = dist
-
-            if closest_node is not None and on_node_click:
-                on_node_click(closest_node, fig, ax)
-
-        fig.canvas.mpl_connect('button_press_event', on_click)
-        plt.title("Catan Board")
-        plt.axis('off')
-        plt.tight_layout()
         plt.show()
     else:
         fig.canvas.draw()
-
-    if game:
-        for player in game.players:
-            for node_id in player.settlements:
-                x, y = G.nodes[node_id]['coordinates']
-                ax.plot(x, y, marker='o', markersize=15, color=player.name.lower(), zorder=10)
-                ax.text(x, y + 0.2, f"{player.name}", color='black', fontsize=9, ha='center', zorder=11)
-
-    plt.title("Catan Board")
-    plt.axis('off')
-    plt.tight_layout()

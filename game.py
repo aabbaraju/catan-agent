@@ -8,6 +8,7 @@ class Game:
         self.tiles = tiles
         self.G = graph
         self.current_index = 0 
+        self.build_mode = None
 
     @property
     def current_player(self):
@@ -31,14 +32,66 @@ class Game:
                             player.add_resource(resource, 2)
                             print(f"{player.name} receives 2 {resource} from city on node {node_id}")
 
-    def handle_node_click(self, node_id, fig, ax):
-        if node_id in self.G.nodes and self.G.nodes[node_id]['occupied_by'] is None:
-            self.current_player.settlements.add(node_id)
-            self.G.nodes[node_id]['occupied_by'] = self.current_player.name
-            print(f"🏠 {self.current_player.name} placed a settlement at node {node_id}")
+    def handle_node_click(self, node_id_or_edge, fig, ax):
+        if self.build_mode == 'road':
+            node1, node2 = node_id_or_edge
+            self._handle_road_click((node1, node2), fig, ax)
+        elif self.build_mode == 'settlement':
+            self._handle_settlement_click(node_id_or_edge, fig, ax)
+        elif self.build_mode == 'city':
+            self._handle_city_click(node_id_or_edge, fig, ax)
 
-            from catanboardVisualizer import render_board
-            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+    def _handle_settlement_click(self, node_id, fig, ax):
+        if node_id not in self.G.nodes or self.G.nodes[node_id]['occupied_by'] is not None:
+            print("Invalid or occupied node.")
+            return
+
+        for neighbor in self.G.neighbors(node_id):
+            if self.G.nodes[neighbor].get('occupied_by') is not None:
+                print("Too close to another settlement.")
+                return
+
+        self.current_player.settlements.add(node_id)
+        self.G.nodes[node_id]['occupied_by'] = self.current_player.name
+        print(f"{self.current_player.name} placed a settlement at node {node_id}")
+        from catanboardVisualizer import render_board
+        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+    
+    def _handle_city_click(self, node_id, fig, ax):
+        if node_id not in self.current_player.settlements:
+            print("You must upgrade one of your own settlements to a city.")
+            return
+        self.current_player.settlements.remove(node_id)
+        self.current_player.cities.add(node_id)
+        self.G.nodes[node_id]['is_city'] = True
+        print(f"{self.current_player.name} upgraded settlement at node {node_id} to a city.")
+
+        from catanboardVisualizer import render_board
+        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+
+    def _handle_road_click(self, edge, fig, ax):
+        node1, node2 = edge
+        if not self.G.has_edge(node1, node2):
+            print("Invalid edge.")
+            return
+
+        if edge in self.current_player.roads or tuple(reversed(edge)) in self.current_player.roads:
+            print("Road already placed.")
+            return
+        
+        connected = (
+            node1 in self.current_player.settlements or
+            node2 in self.current_player.settlements or
+            any(n in (node1, node2) for road in self.current_player.roads for n in road)
+        )
+        if not connected:
+            print("Road must connect to your existing road or settlement.")
+            return
+
+        self.current_player.roads.add(edge)
+        print(f"{self.current_player.name} placed a road between {node1} and {node2}")
+        from catanboardVisualizer import render_board
+        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
 
 if __name__ == "__main__":
     from catanboard import tiles, G
@@ -48,9 +101,6 @@ if __name__ == "__main__":
 
     player1 = Player("Red")
     player2 = Player("Blue")
-
-    player1.settlements.add(8)
-    player2.cities.add(13)
 
     game = Game([player1, player2], tiles, G)
     game.roll()
