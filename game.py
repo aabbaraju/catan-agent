@@ -11,11 +11,11 @@ class Game:
         self.build_mode = None
         self.setup_phase = True
         self.setup_stage = 0
-        self.setup_placements = {player.name: 0 for player in players}
+        self.setup_status = {player.name: {'settlement': False, 'road': False} for player in players}
         self.forward_order = True
         self.turn_order_rolls = {}
         self.turn_order_determined = False
-        self.has_rolled_this_turn = False
+        self.has_rolled = {player.name: False for player in self.players}
 
     COSTS = {
     'settlement': {'wood': 1, 'brick': 1, 'sheep': 1, 'wheat': 1},
@@ -28,11 +28,40 @@ class Game:
         return self.players[self.current_index]
 
     def roll(self):
-        roll = random.randint(1, 6) + random.randint(1, 6)
-        print(f"\n Dice Roll: {roll}")
+        roll_val = random.randint(1, 6) + random.randint(1, 6)
+
+        if not self.turn_order_determined:
+            name = self.current_player.name
+            if name in self.turn_order_rolls:
+                print(f"{name} already rolled.")
+                return
+
+            self.turn_order_rolls[name] = roll_val
+            print(f"{name} rolled {roll_val} for turn order.")
+
+            self.current_index = (self.current_index + 1) % len(self.players)
+
+            if len(self.turn_order_rolls) == len(self.players):
+                self._set_turn_order()
+                print("All players rolled. Turn order determined:")
+                for p in self.players:
+                    print(f"→ {p.name} (rolled {self.turn_order_rolls[p.name]})")
+
+            return
+
+        if self.setup_phase:
+            print("No need to roll during setup.")
+            return
+
+        if self.has_rolled[self.current_player.name]:
+            print("You already rolled this turn.")
+            return
+
+        print(f"\n{self.current_player.name} rolls: {roll_val}")
+        self.has_rolled[self.current_player.name] = True
 
         for tile in self.tiles:
-            if tile.frequency == roll:
+            if tile.frequency == roll_val:
                 resource = tile.get_resource()
                 if not resource:
                     continue
@@ -45,6 +74,38 @@ class Game:
                             player.add_resource(resource, 2)
                             print(f"{player.name} receives 2 {resource} from city on node {node_id}")
     
+    def pass_turn(self, fig, ax):
+        if not self.turn_order_determined:
+            print("Finish rolling for turn order first.")
+            return
+
+        if self.setup_phase:
+            print("Can't pass manually during setup.")
+            return
+
+        if not self.has_rolled[self.current_player.name]:
+            print("You must roll before passing.")
+            return
+
+        self.current_index = (self.current_index + 1) % len(self.players)
+        self.has_rolled[self.current_player.name] = False
+
+        from catanboardVisualizer import render_board
+        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+
+        print(f"{self.current_player.name}'s turn")
+    
+    def _set_turn_order(self):
+        ordered_players = sorted(self.players, key=lambda p: self.turn_order_rolls[p.name], reverse=True)
+        self.players = ordered_players
+        self.current_index = 0
+        self.turn_order_determined = True
+        self.setup_phase = True
+        self.setup_stage = 0
+        self.forward_order = True
+        self.setup_placements = {p.name: 0 for p in self.players}
+        print("Turn order determined:", [p.name for p in self.players])
+
     def _can_afford(self, structure):
         cost = self.COSTS.get(structure, {})
         return all(self.current_player.resources.get(res, 0) >= amount for res, amount in cost.items())
@@ -56,22 +117,31 @@ class Game:
     def place_initial(self, node_or_edge, fig, ax):
         player = self.current_player
 
-        if isinstance(node_or_edge, tuple):  # road
+        if isinstance(node_or_edge, tuple): 
             node1, node2 = node_or_edge
-            if not (node1 in player.settlements or node2 in player.settlements):
+            if not (
+                self.G.nodes[node1].get('occupied_by') == player.name or
+                self.G.nodes[node2].get('occupied_by') == player.name
+            ):
                 print("Initial road must connect to your settlement.")
                 return
             if not self.G.has_edge(node1, node2):
                 print("Invalid edge.")
                 return
+            if self.setup_status[player.name]['road']:
+                print("You've already placed your road.")
+                return
             player.roads.add((node1, node2))
             print(f"{player.name} placed initial road {node1} ↔ {node2}")
-            self.setup_placements[player.name] += 1
+            self.setup_status[player.name]['road'] = True
 
         else: 
             node = node_or_edge
             if self.G.nodes[node].get('occupied_by') is not None:
                 print("Node occupied.")
+                return
+            if self.setup_status[player.name]['settlement']:
+                print("You've already placed your settlement.")
                 return
             for neighbor in self.G.neighbors(node):
                 if self.G.nodes[neighbor].get('occupied_by') is not None:
@@ -80,7 +150,7 @@ class Game:
             player.settlements.add(node)
             self.G.nodes[node]['occupied_by'] = player.name
             print(f"{player.name} placed initial settlement at {node}")
-            self.setup_placements[player.name] += 1
+            self.setup_status[player.name]['settlement'] = True
 
             if self.setup_stage == 1:
                 for tile in self.tiles:
@@ -90,8 +160,8 @@ class Game:
                             player.add_resource(resource, 1)
                             print(f"{player.name} received 1 {resource} from starting tile")
 
-        if self.setup_placements[player.name] == 2:
-            self.setup_placements[player.name] = 0 
+        if all(self.setup_status[player.name].values()):
+            self.setup_status[player.name] = {'settlement': False, 'road': False}
             self._advance_setup_turn()
 
         from catanboardVisualizer import render_board
@@ -109,10 +179,18 @@ class Game:
             if self.current_index < 0:
                 self.setup_phase = False
                 self.current_index = 0
+                self.has_rolled = {player.name: False for player in self.players}
 
     def handle_node_click(self, node_id_or_edge, fig, ax):
+        if not self.turn_order_determined:
+            print("You must roll to determine turn order before building.")
+            return
+
         if self.setup_phase:
             self.place_initial(node_id_or_edge, fig, ax)
+        elif not self.has_rolled[self.current_player.name]:
+            print("You must roll before building.")
+            return
         else:
             if self.build_mode == 'road':
                 node1, node2 = node_id_or_edge
@@ -199,10 +277,5 @@ if __name__ == "__main__":
     player2 = Player("Blue")
 
     game = Game([player1, player2], tiles, G)
-    game.roll()
-
-    print(f"\nFinal Resources:")
-    print(player1.name, player1.resources)
-    print(player2.name, player2.resources)
 
     render_board(G, tiles, on_node_click=game.handle_node_click, game=game)

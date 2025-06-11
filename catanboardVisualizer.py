@@ -147,12 +147,14 @@ def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, red
     button_ax1 = plt.axes([0.86, 0.84, 0.12, 0.05])
     button_ax2 = plt.axes([0.86, 0.77, 0.12, 0.05])
     button_ax3 = plt.axes([0.86, 0.7, 0.12, 0.05])
-    button_ax4 = plt.axes([0.86, 0.63, 0.14, 0.05])
+    button_ax4 = plt.axes([0.86, 0.63, 0.12, 0.05])
+    button_ax5 = plt.axes([0.86, 0.56, 0.12, 0.05])
 
     btn_settlement = widgets.Button(button_ax1, 'Place Settlement')
     btn_road = widgets.Button(button_ax2, 'Place Road')
     btn_city = widgets.Button(button_ax3, 'Place City')
-    btn_pass = widgets.Button(button_ax4, 'Pass Turn')
+    btn_roll = widgets.Button(button_ax4, 'Roll')
+    btn_pass = widgets.Button(button_ax5, 'Pass Turn')
 
     def set_settlement(event):
         game.build_mode = 'settlement'
@@ -166,15 +168,17 @@ def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, red
         game.build_mode = 'city'
         print("Build mode: City")
 
-    def pass_turn(event):
-        game.current_index = (game.current_index + 1) % len(game.players)
-        print(f"{game.current_player.name}'s turn")
-        render_board(G, tiles, on_node_click=game.handle_node_click, game=game, fig=fig, ax=ax, redraw_only=True)
+    def pass_turn(event):   
+        game.pass_turn(fig, ax)
         game.build_mode = None
+    
+    def roll(event):
+        game.roll()
 
     btn_settlement.on_clicked(set_settlement)
     btn_road.on_clicked(set_road)
     btn_city.on_clicked(set_city)
+    btn_roll.on_clicked(roll)   
     btn_pass.on_clicked(pass_turn)
 
     plt.axis('off')
