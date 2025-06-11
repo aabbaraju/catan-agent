@@ -64,12 +64,47 @@ class Game:
             self.robber_tile.has_robber = True
             print(f"Robber moved to tile with resource: {closest_tile.resource}")
 
+            victims = set()
+            for node_id in closest_tile.corner_nodes:
+                for player in self.players:
+                    if player != self.current_player and (node_id in player.settlements or node_id in player.cities):
+                        victims.add(player)
+
+            if victims:
+                victim = random.choice(list(victims))
+                victim_cards = [res for res, count in victim.resources.items() for _ in range(count)]
+                if victim_cards:
+                    stolen_resource = random.choice(victim_cards)
+                    victim.resources[stolen_resource] -= 1
+                    self.current_player.resources[stolen_resource] += 1
+                    print(f"{self.current_player.name} stole 1 {stolen_resource} from {victim.name}")
+                else:
+                    print(f"{victim.name} had no resources to steal.")
+            else:
+                print("No player to steal from on this tile.")
+
             from catanboardVisualizer import render_board
             render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
 
             fig.canvas.mpl_disconnect(cid)
 
         cid = fig.canvas.mpl_connect('button_press_event', on_tile_click)
+
+    def _discard_half_resources(self):
+        for player in self.players:
+            total_cards = sum(player.resources.values())
+            if total_cards > 7:
+                to_discard = total_cards // 2
+                print(f"{player.name} has {total_cards} resources and must discard {to_discard}.")
+
+                resource_list = []
+                for res, count in player.resources.items():
+                    resource_list.extend([res] * count)
+
+                discarded = random.sample(resource_list, to_discard)
+                for res in discarded:
+                    player.resources[res] -= 1
+                print(f"{player.name} discards: {discarded}")
 
     def roll(self, fig, ax):
         roll_val = random.randint(1, 6) + random.randint(1, 6)
@@ -113,6 +148,7 @@ class Game:
 
         if roll_val == 7:
             print(f"{self.current_player.name} rolled a 7! Moving the robber.")
+            self._discard_half_resources()
             self._handle_robber(fig, ax)
             return
         
