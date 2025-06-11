@@ -90,6 +90,21 @@ class Game:
 
         cid = fig.canvas.mpl_connect('button_press_event', on_tile_click)
 
+    def check_win_condition(self, fig, ax):
+        for player in self.players:
+            if player.victory_points() >= 10:
+                print(f"{player.name} wins the game with {player.victory_points()} points!")
+                self.disable_all_actions(fig)
+                from catanboardVisualizer import render_board
+                render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+                break
+
+    def disable_all_actions(self, fig):
+        self.build_mode = None
+        self.has_rolled = {player.name: True for player in self.players}
+        self.game_over = True
+        print("Game Over: No further actions can be taken.")
+
     def _discard_half_resources(self):
         for player in self.players:
             total_cards = sum(player.resources.values())
@@ -105,6 +120,40 @@ class Game:
                 for res in discarded:
                     player.resources[res] -= 1
                 print(f"{player.name} discards: {discarded}")
+    
+    def update_longest_road(self):
+        def longest_path_length(player):
+            from networkx import Graph
+
+            road_graph = Graph()
+            for a, b in player.roads:
+                road_graph.add_edge(a, b)
+
+            def dfs(node, visited):
+                visited.add(node)
+                max_length = 0
+                for neighbor in road_graph.neighbors(node):
+                    if neighbor not in visited:
+                        length = 1 + dfs(neighbor, visited.copy())
+                        max_length = max(max_length, length)
+                return max_length
+
+            return max((dfs(n, set()) for n in road_graph.nodes), default=0)
+
+        max_length = 0
+        longest_player = None
+
+        for player in self.players:
+            length = longest_path_length(player)
+            if length >= 5 and length > max_length:
+                max_length = length
+                longest_player = player
+
+        for player in self.players:
+            player.has_longest_road = (player == longest_player)
+
+        if longest_player:
+            print(f"{longest_player.name} has the Longest Road ({max_length} segments)")
 
     def roll(self, fig, ax):
         roll_val = random.randint(1, 6) + random.randint(1, 6)
@@ -339,6 +388,7 @@ class Game:
         print(f"{self.current_player.name} placed a settlement at node {node_id}")
         from catanboardVisualizer import render_board
         render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+        self.check_win_condition(fig, ax)
     
     def _handle_city_click(self, node_id, fig, ax):
         if not self._can_afford('city'):
@@ -356,6 +406,7 @@ class Game:
 
         from catanboardVisualizer import render_board
         render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+        self.check_win_condition(fig, ax)
 
     def _handle_road_click(self, edge, fig, ax):
 
@@ -385,6 +436,10 @@ class Game:
         print(f"{self.current_player.name} placed a road between {node1} and {node2}")
         from catanboardVisualizer import render_board
         render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+
+        self.current_player.roads.add(edge)
+        self.update_longest_road()
+        self.check_win_condition(fig, ax)
 
 if __name__ == "__main__":
     from catanboard import tiles, G

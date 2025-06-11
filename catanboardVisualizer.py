@@ -157,6 +157,20 @@ def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, red
                     fontsize=10, ha='left', va='top')
         )
 
+        sidebar_texts.append(
+            fig.text(0.1, info_y_start - 3 * y_step,
+                    f"Victory Points: {game.current_player.victory_points()}",
+                    fontsize=11, fontweight='bold', ha='left')
+        )
+
+        if hasattr(game, 'game_over') and game.game_over:
+            winner = max(game.players, key=lambda p: p.victory_points())
+            sidebar_texts.append(
+                fig.text(0.1, info_y_start - 4 * y_step,
+                        f"Winner: {winner.name} ({winner.victory_points()} VP)",
+                        fontsize=12, fontweight='bold', ha='left', color='green')
+            )
+
     clicked_nodes = []
 
     def on_click(event):
