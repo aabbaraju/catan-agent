@@ -65,6 +65,19 @@ def draw_city(ax, x, y, color):
     ax.add_patch(base)
     ax.add_patch(tower)
 
+def draw_robber(ax, x, y):
+    scale = 0.25 
+
+    base = patches.Circle((x, y - scale * 1.1), radius=scale * 0.5, facecolor='red', edgecolor='black', zorder=20)
+    ax.add_patch(base)
+
+    body = patches.Ellipse((x, y - scale * 0.2), width=scale * 1.2, height=scale * 2.0,
+                           facecolor='black', edgecolor='black', zorder=21)
+    ax.add_patch(body)
+
+    head = patches.Circle((x, y + scale * 0.8), radius=scale * 0.5, facecolor='black', edgecolor='black', zorder=22)
+    ax.add_patch(head)
+
 def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, redraw_only=False):
     if not fig or not ax:
         fig, ax = plt.subplots(figsize=(10, 10))
@@ -95,6 +108,8 @@ def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, red
                     fontsize=9, fontweight='bold',
                     bbox=dict(facecolor='white', alpha=0.6, boxstyle='round,pad=0.2'),
                     zorder=2)
+            if tile.has_robber:
+                draw_robber(ax, tile.center[0], tile.center[1])
 
     if game:
         for player in game.players:
@@ -173,7 +188,7 @@ def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, red
         game.build_mode = None
     
     def roll(event):
-        game.roll()
+        game.roll(fig, ax)
 
     btn_settlement.on_clicked(set_settlement)
     btn_road.on_clicked(set_road)

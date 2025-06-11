@@ -9,6 +9,7 @@ class Tile:
         self.frequency = frequency
         self.center = center
         self.corner_nodes = corner_nodes
+        self.has_robber = False
     def get_resource(self):
         return self.resource if self.resource != 'desert' else None
 

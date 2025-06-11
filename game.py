@@ -16,6 +16,7 @@ class Game:
         self.turn_order_rolls = {}
         self.turn_order_determined = False
         self.has_rolled = {player.name: False for player in self.players}
+        self.robber_tile = None
 
     COSTS = {
     'settlement': {'wood': 1, 'brick': 1, 'sheep': 1, 'wheat': 1},
@@ -26,8 +27,50 @@ class Game:
     @property
     def current_player(self):
         return self.players[self.current_index]
+    
+    def _handle_robber(self, fig, ax):
+        print("Click a tile to move the robber.")
 
-    def roll(self):
+        def on_tile_click(event):
+            if event.inaxes != ax:
+                return
+
+            click_x, click_y = event.xdata, event.ydata
+            threshold = 0.6  
+            closest_tile = None
+            min_dist = float('inf')
+
+            for tile in self.tiles:
+                cx, cy = tile.center
+                dist = ((cx - click_x) ** 2 + (cy - click_y) ** 2) ** 0.5
+                if dist < threshold and dist < min_dist:
+                    closest_tile = tile
+                    min_dist = dist
+
+            if closest_tile is None:
+                print("No valid tile selected.")
+                return
+
+            if closest_tile == self.robber_tile:
+                print("Robber is already on this tile. Choose another.")
+                return
+
+            if self.robber_tile is not None:
+                self.robber_tile.has_robber = False
+                print(f"Robber removed from tile with resource: {self.robber_tile.resource}")
+
+            self.robber_tile = closest_tile
+            self.robber_tile.has_robber = True
+            print(f"Robber moved to tile with resource: {closest_tile.resource}")
+
+            from catanboardVisualizer import render_board
+            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+
+            fig.canvas.mpl_disconnect(cid)
+
+        cid = fig.canvas.mpl_connect('button_press_event', on_tile_click)
+
+    def roll(self, fig, ax):
         roll_val = random.randint(1, 6) + random.randint(1, 6)
 
         if not self.turn_order_determined:
@@ -46,7 +89,6 @@ class Game:
                 print("All players rolled. Turn order determined:")
                 for p in self.players:
                     print(f"→ {p.name} (rolled {self.turn_order_rolls[p.name]})")
-
             return
 
         if self.setup_phase:
@@ -60,8 +102,19 @@ class Game:
         print(f"\n{self.current_player.name} rolls: {roll_val}")
         self.has_rolled[self.current_player.name] = True
 
+        if roll_val == 7:
+            print(f"{self.current_player.name} rolled a 7! Moving the robber.")
+            self._handle_robber(fig, ax)
+            return
+        
         for tile in self.tiles:
             if tile.frequency == roll_val:
+                if tile.resource == 'desert':
+                    Game.robber_tile = tile
+                    break
+                if tile == self.robber_tile:
+                    print(f"Robber is blocking the tile with resource: {tile.resource}")
+                    continue
                 resource = tile.get_resource()
                 if not resource:
                     continue
@@ -188,17 +241,38 @@ class Game:
 
         if self.setup_phase:
             self.place_initial(node_id_or_edge, fig, ax)
-        elif not self.has_rolled[self.current_player.name]:
+            return
+
+        if not self.has_rolled[self.current_player.name]:
             print("You must roll before building.")
             return
+
+        if self.build_mode == 'road':
+            if not isinstance(node_id_or_edge, tuple) or len(node_id_or_edge) != 2:
+                print("Invalid edge selection for road.")
+                self.build_mode = None
+                return
+            self._handle_road_click(node_id_or_edge, fig, ax)
+            self.build_mode = None 
+
+        elif self.build_mode == 'settlement':
+            if not isinstance(node_id_or_edge, int):
+                print("Invalid node selection for settlement.")
+                self.build_mode = None
+                return
+            self._handle_settlement_click(node_id_or_edge, fig, ax)
+            self.build_mode = None
+
+        elif self.build_mode == 'city':
+            if not isinstance(node_id_or_edge, int):
+                print("Invalid node selection for city.")
+                self.build_mode = None
+                return
+            self._handle_city_click(node_id_or_edge, fig, ax)
+            self.build_mode = None
+
         else:
-            if self.build_mode == 'road':
-                node1, node2 = node_id_or_edge
-                self._handle_road_click((node1, node2), fig, ax)
-            elif self.build_mode == 'settlement':
-                self._handle_settlement_click(node_id_or_edge, fig, ax)
-            elif self.build_mode == 'city':
-                self._handle_city_click(node_id_or_edge, fig, ax)
+            print("No build mode selected.")
 
     def _handle_settlement_click(self, node_id, fig, ax):
         if not self._can_afford('settlement'):
