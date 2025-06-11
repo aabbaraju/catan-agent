@@ -13,6 +13,8 @@ resource_colors = {
     'desert': '#F0E68C'
 }
 
+sidebar_texts = []
+
 def draw_hex(ax, center, size=1, edgecolor='black', facecolor='none', linewidth=1.5):
     cx, cy = center
     hex_coords = [
@@ -79,8 +81,14 @@ def draw_robber(ax, x, y):
     ax.add_patch(head)
 
 def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, redraw_only=False):
+    global sidebar_texts
+    for txt in sidebar_texts:
+        txt.remove()
+    sidebar_texts.clear()
+
     if not fig or not ax:
-        fig, ax = plt.subplots(figsize=(10, 10))
+        fig, ax = plt.subplots(figsize=(11, 10))
+        plt.subplots_adjust(right=3)
     else:
         ax.clear()
 
@@ -117,16 +125,37 @@ def render_board(G, tiles, on_node_click=None, game=None, fig=None, ax=None, red
                 x, y = G.nodes[node_id]['coordinates']
                 draw_settlement(ax, x, y, player.name.lower())
                 ax.text(x, y + 0.2, f"{player.name}", color='black', fontsize=9, ha='center', zorder=11)
-            
+
             for node_id in player.cities:
                 x, y = G.nodes[node_id]['coordinates']
                 draw_city(ax, x, y, player.name.lower())
                 ax.text(x, y + 0.35, 'City', color='black', fontsize=8, ha='center', zorder=12)
-            
+
             for node1, node2 in player.roads:
                 x1, y1 = G.nodes[node1]['coordinates']
                 x2, y2 = G.nodes[node2]['coordinates']
                 ax.plot([x1, x2], [y1, y2], color=player.name.lower(), linewidth=3, zorder=5)
+        info_x = 0.77
+        info_y_start = 0.96
+        y_step = 0.06
+
+        sidebar_texts.append(
+            fig.text(info_x, info_y_start, f"Current Turn: {game.current_player.name}",
+                    fontsize=12, fontweight='bold', ha='left')
+        )
+
+        last_roll_str = f"{game.last_roll}" if game.last_roll is not None else "-"
+        sidebar_texts.append(
+            fig.text(info_x, info_y_start - y_step, f"Last Roll: {last_roll_str}",
+                    fontsize=11, ha='left')
+        )
+
+        resources = game.current_player.resources
+        resource_text = "\n".join([f"{res.title()}: {count}" for res, count in resources.items()])
+        sidebar_texts.append(
+            fig.text(info_x, info_y_start - 2 * y_step, f"Resources:\n{resource_text}",
+                    fontsize=10, ha='left', va='top')
+        )
 
     clicked_nodes = []
 

@@ -17,6 +17,7 @@ class Game:
         self.turn_order_determined = False
         self.has_rolled = {player.name: False for player in self.players}
         self.robber_tile = None
+        self.last_roll = None
 
     COSTS = {
     'settlement': {'wood': 1, 'brick': 1, 'sheep': 1, 'wheat': 1},
@@ -73,14 +74,22 @@ class Game:
     def roll(self, fig, ax):
         roll_val = random.randint(1, 6) + random.randint(1, 6)
 
+        self.last_roll = roll_val
+        from catanboardVisualizer import render_board
+        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+        
         if not self.turn_order_determined:
             name = self.current_player.name
             if name in self.turn_order_rolls:
                 print(f"{name} already rolled.")
                 return
 
+            self.last_roll = roll_val
             self.turn_order_rolls[name] = roll_val
             print(f"{name} rolled {roll_val} for turn order.")
+
+            from catanboardVisualizer import render_board
+            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
 
             self.current_index = (self.current_index + 1) % len(self.players)
 
