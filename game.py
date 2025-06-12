@@ -19,6 +19,8 @@ class Game:
         self.robber_tile = None
         self.last_roll = None
         self.robber_pending = False
+        self.visual_mode = False
+        self.game_over = False
 
     COSTS = {
     'settlement': {'wood': 1, 'brick': 1, 'sheep': 1, 'wheat': 1},
@@ -30,43 +32,18 @@ class Game:
     def current_player(self):
         return self.players[self.current_index]
     
-    def _handle_robber(self, fig, ax):
-        print("Click a tile to move the robber.")
-
-        def on_tile_click(event):
-            if event.inaxes != ax:
-                return
-
-            click_x, click_y = event.xdata, event.ydata
-            threshold = 0.6  
-            closest_tile = None
-            min_dist = float('inf')
-
-            for tile in self.tiles:
-                cx, cy = tile.center
-                dist = ((cx - click_x) ** 2 + (cy - click_y) ** 2) ** 0.5
-                if dist < threshold and dist < min_dist:
-                    closest_tile = tile
-                    min_dist = dist
-
-            if closest_tile is None:
-                print("No valid tile selected.")
-                return
-
-            if closest_tile == self.robber_tile:
-                print("Robber is already on this tile. Choose another.")
-                return
-
-            if self.robber_tile is not None:
+    def _handle_robber(self, fig=None, ax=None):
+        def execute_robber_logic(target_tile):
+            if self.robber_tile:
                 self.robber_tile.has_robber = False
                 print(f"Robber removed from tile with resource: {self.robber_tile.resource}")
 
-            self.robber_tile = closest_tile
+            self.robber_tile = target_tile
             self.robber_tile.has_robber = True
-            print(f"Robber moved to tile with resource: {closest_tile.resource}")
+            print(f"Robber moved to tile with resource: {target_tile.resource}")
 
             victims = set()
-            for node_id in closest_tile.corner_nodes:
+            for node_id in target_tile.corner_nodes:
                 for player in self.players:
                     if player != self.current_player and (node_id in player.settlements or node_id in player.cities):
                         victims.add(player)
@@ -84,24 +61,59 @@ class Game:
             else:
                 print("No player to steal from on this tile.")
 
-            from catanboardVisualizer import render_board
-            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
             self.robber_pending = False
 
+            if getattr(self, 'visual_mode', False) and fig and ax:
+                from catanboardVisualizer import render_board
+                render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+
+        if fig is None or ax is None:
+            valid_tiles = [t for t in self.tiles if t != self.robber_tile]
+            if not valid_tiles:
+                print("No valid tile to place robber.")
+                return
+            chosen_tile = random.choice(valid_tiles)
+            execute_robber_logic(chosen_tile)
+            return
+
+        print("Click a tile to move the robber.")
+
+        def on_tile_click(event):
+            if event.inaxes != ax:
+                return
+
+            click_x, click_y = event.xdata, event.ydata
+            threshold = 0.6
+            closest_tile = None
+            min_dist = float('inf')
+
+            for tile in self.tiles:
+                cx, cy = tile.center
+                dist = ((cx - click_x) ** 2 + (cy - click_y) ** 2) ** 0.5
+                if dist < threshold and dist < min_dist:
+                    closest_tile = tile
+                    min_dist = dist
+
+            if closest_tile is None or closest_tile == self.robber_tile:
+                print("Invalid tile selection.")
+                return
+
             fig.canvas.mpl_disconnect(cid)
+            execute_robber_logic(closest_tile)
 
         cid = fig.canvas.mpl_connect('button_press_event', on_tile_click)
 
-    def check_win_condition(self, fig, ax):
+    def check_win_condition(self, fig = None, ax = None):
         for player in self.players:
             if player.victory_points() >= 10:
                 print(f"{player.name} wins the game with {player.victory_points()} points!")
                 self.disable_all_actions(fig)
-                from catanboardVisualizer import render_board
-                render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+                if getattr(self, 'visual_mode', False) and fig and ax:
+                    from catanboardVisualizer import render_board
+                    render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
                 break
 
-    def disable_all_actions(self, fig):
+    def disable_all_actions(self, fig = None):
         self.build_mode = None
         self.has_rolled = {player.name: True for player in self.players}
         self.game_over = True
@@ -137,6 +149,38 @@ class Game:
                     player.resources[res] -= 1
                 print(f"{player.name} discards: {discarded}")
     
+    def get_valid_actions(self):
+        player = self.current_player
+        actions = []
+
+        if self.setup_phase:
+            if not self.turn_order_determined:
+                return ["roll"]
+            status = self.setup_status[player.name]
+            if not status['settlement']:
+                return ["build_settlement"]
+            elif not status['road']:
+                return ["build_road"]
+            return []
+
+        if not self.has_rolled[player.name]:
+            return ["roll"]
+
+        if self.last_roll == 7 and not getattr(self, 'robber_moved', True):
+            return ["move_robber"]
+
+        actions.append("pass")
+
+        if self.can_build_settlement(player):
+            actions.append("build_settlement")
+        if self.can_build_road(player):
+            actions.append("build_road")
+        if self.can_build_city(player):
+            actions.append("build_city")
+        if self.can_bank_trade(player):
+            actions.append("bank_trade")
+
+        return actions
     def update_longest_road(self):
         def longest_path_length(player):
             from networkx import Graph
@@ -171,12 +215,13 @@ class Game:
         if longest_player:
             print(f"{longest_player.name} has the Longest Road ({max_length} segments)")
 
-    def roll(self, fig, ax):
+    def roll(self, fig = None, ax = None):
         roll_val = random.randint(1, 6) + random.randint(1, 6)
 
         self.last_roll = roll_val
-        from catanboardVisualizer import render_board
-        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+        if getattr(self, 'visual_mode', False) and fig and ax:
+            from catanboardVisualizer import render_board
+            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
         
         if not self.turn_order_determined:
             name = self.current_player.name
@@ -188,8 +233,9 @@ class Game:
             self.turn_order_rolls[name] = roll_val
             print(f"{name} rolled {roll_val} for turn order.")
 
-            from catanboardVisualizer import render_board
-            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+            if getattr(self, 'visual_mode', False) and fig and ax:
+                from catanboardVisualizer import render_board
+                render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
 
             self.current_index = (self.current_index + 1) % len(self.players)
 
@@ -237,10 +283,11 @@ class Game:
                         elif node_id in player.cities:
                             player.add_resource(resource, 2)
                             print(f"{player.name} receives 2 {resource} from city on node {node_id}")
-        from catanboardVisualizer import render_board
-        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)       
+        if getattr(self, 'visual_mode', False) and fig and ax:
+            from catanboardVisualizer import render_board
+            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)       
     
-    def pass_turn(self, fig, ax):
+    def pass_turn(self, fig = None, ax = None):
         if not self.turn_order_determined:
             print("Finish rolling for turn order first.")
             return
@@ -259,8 +306,9 @@ class Game:
         self.current_index = (self.current_index + 1) % len(self.players)
         self.has_rolled[self.current_player.name] = False
 
-        from catanboardVisualizer import render_board
-        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+        if getattr(self, 'visual_mode', False) and fig and ax:
+            from catanboardVisualizer import render_board
+            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
 
         print(f"{self.current_player.name}'s turn")
     
@@ -279,11 +327,23 @@ class Game:
         cost = self.COSTS.get(structure, {})
         return all(self.current_player.resources.get(res, 0) >= amount for res, amount in cost.items())
     
+    def can_build_settlement(self, player):
+        return self._can_afford('settlement')
+
+    def can_build_road(self, player):
+        return self._can_afford('road')
+
+    def can_build_city(self, player):
+        return self._can_afford('city') and bool(player.settlements)
+
+    def can_bank_trade(self, player):
+        return any(qty >= 4 for qty in player.resources.values())
+    
     def _deduct_cost(self, structure):
         for res, amount in self.COSTS[structure].items():
             self.current_player.resources[res] -= amount
     
-    def place_initial(self, node_or_edge, fig, ax):
+    def place_initial(self, node_or_edge, fig = None, ax = None):
         player = self.current_player
 
         if isinstance(node_or_edge, tuple): 
@@ -333,8 +393,9 @@ class Game:
             self.setup_status[player.name] = {'settlement': False, 'road': False}
             self._advance_setup_turn()
 
-        from catanboardVisualizer import render_board
-        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+        if getattr(self, 'visual_mode', False) and fig and ax:
+            from catanboardVisualizer import render_board
+            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
     
     def _advance_setup_turn(self):
         if self.forward_order:
@@ -408,8 +469,11 @@ class Game:
         self.current_player.settlements.add(node_id)
         self.G.nodes[node_id]['occupied_by'] = self.current_player.name
         print(f"{self.current_player.name} placed a settlement at node {node_id}")
-        from catanboardVisualizer import render_board
-        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+
+        if getattr(self, 'visual_mode', False) and fig and ax:
+            from catanboardVisualizer import render_board
+            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+
         self.check_win_condition(fig, ax)
     
     def _handle_city_click(self, node_id, fig, ax):
@@ -426,8 +490,9 @@ class Game:
         self.G.nodes[node_id]['is_city'] = True
         print(f"{self.current_player.name} upgraded settlement at node {node_id} to a city.")
 
-        from catanboardVisualizer import render_board
-        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+        if getattr(self, 'visual_mode', False) and fig and ax:
+            from catanboardVisualizer import render_board
+            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
         self.check_win_condition(fig, ax)
 
     def _handle_road_click(self, edge, fig, ax):
@@ -456,8 +521,10 @@ class Game:
         self._deduct_cost('road')
         self.current_player.roads.add(edge)
         print(f"{self.current_player.name} placed a road between {node1} and {node2}")
-        from catanboardVisualizer import render_board
-        render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
+        
+        if getattr(self, 'visual_mode', False) and fig and ax:
+            from catanboardVisualizer import render_board
+            render_board(self.G, self.tiles, game=self, fig=fig, ax=ax, redraw_only=True)
 
         self.current_player.roads.add(edge)
         self.update_longest_road()
@@ -476,37 +543,39 @@ if __name__ == "__main__":
 
     game = Game([player1, player2], tiles, G)
 
-    fig, ax = plt.subplots(figsize=(10, 8))
-    plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.25)
+    if game.visual_mode:
+        fig, ax = plt.subplots(figsize=(10, 8))
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.25)
 
-    ax_give = plt.axes([0.52, 0.03, 0.1, 0.04])
-    ax_receive = plt.axes([0.72, 0.03, 0.1, 0.04])
+        ax_give = plt.axes([0.52, 0.03, 0.1, 0.04])
+        ax_receive = plt.axes([0.72, 0.03, 0.1, 0.04])
 
-    bank_give_box = TextBox(ax_give, 'Give (4x):')
-    bank_receive_box = TextBox(ax_receive, 'Receive (1x):')
+        bank_give_box = TextBox(ax_give, 'Give (4x):')
+        bank_receive_box = TextBox(ax_receive, 'Receive (1x):')
 
-    game.bank_give_box = bank_give_box
-    game.bank_receive_box = bank_receive_box
+        game.bank_give_box = bank_give_box
+        game.bank_receive_box = bank_receive_box
 
-    ax_btn_trade = plt.axes([0.84, 0.03, 0.1, 0.04])
-    btn_trade = Button(ax_btn_trade, '4:1 Trade')
+        ax_btn_trade = plt.axes([0.84, 0.03, 0.1, 0.04])
+        btn_trade = Button(ax_btn_trade, '4:1 Trade')
 
-    def bank_trade_prompt(event):
-        give = game.bank_give_box.text.strip().lower()
-        receive = game.bank_receive_box.text.strip().lower()
+        def bank_trade_prompt(event):
+            give = game.bank_give_box.text.strip().lower()
+            receive = game.bank_receive_box.text.strip().lower()
 
-        if give == receive:
-            print("You must choose a different resource to receive.")
-            return
+            if give == receive:
+                print("You must choose a different resource to receive.")
+                return
 
-        success = game.bank_trade(give, receive)
-        if success:
-            game.bank_give_box.set_val("")
-            game.bank_receive_box.set_val("")
-            from catanboardVisualizer import render_board
-            render_board(game.G, game.tiles, game=game, fig=fig, ax=ax, redraw_only=True)
+            success = game.bank_trade(give, receive)
+            if success:
+                game.bank_give_box.set_val("")
+                game.bank_receive_box.set_val("")
+                if getattr('visual_mode', False):
+                    from catanboardVisualizer import render_board
+                    render_board(game.G, game.tiles, game=game, fig=fig, ax=ax, redraw_only=True)
 
-    btn_trade.on_clicked(bank_trade_prompt)
-
-    render_board(G, tiles, on_node_click=game.handle_node_click, game=game, fig=fig, ax=ax)
-    plt.show()
+        btn_trade.on_clicked(bank_trade_prompt)
+        if getattr(game, 'visual_mode', False):
+            render_board(G, tiles, on_node_click=game.handle_node_click, game=game, fig=fig, ax=ax)
+            plt.show()
