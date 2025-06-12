@@ -323,18 +323,20 @@ class Game:
         self.setup_placements = {p.name: 0 for p in self.players}
         print("Turn order determined:", [p.name for p in self.players])
 
-    def _can_afford(self, structure):
+    def _can_afford(self, structure, player=None):
         cost = self.COSTS.get(structure, {})
-        return all(self.current_player.resources.get(res, 0) >= amount for res, amount in cost.items())
-    
+        if player is None:
+            player = self.current_player
+        return all(player.resources.get(res, 0) >= amount for res, amount in cost.items())
+
     def can_build_settlement(self, player):
-        return self._can_afford('settlement')
+        return self._can_afford('settlement', player)
 
     def can_build_road(self, player):
-        return self._can_afford('road')
+        return self._can_afford('road', player)
 
     def can_build_city(self, player):
-        return self._can_afford('city') and bool(player.settlements)
+        return self._can_afford('city', player) and bool(player.settlements)
 
     def can_bank_trade(self, player):
         return any(qty >= 4 for qty in player.resources.values())
