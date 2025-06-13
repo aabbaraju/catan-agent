@@ -6,6 +6,7 @@ from catanboard import generate_board
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 tiles, G = generate_board()
 game = Game([Player("Red"), Player("Blue")], tiles, G)
@@ -13,7 +14,12 @@ env = CatanEnvironment(game)
 agent = DQNAgent(state_dim=10, action_dim=6)
 rewards_per_episode = []
 
-num_episodes = 100
+MODEL_PATH = "dqnCatan.pth"
+if os.path.exists(MODEL_PATH):
+    agent.model.load_state_dict(torch.load(MODEL_PATH))
+    print(f"Loaded weights from {MODEL_PATH}")
+    
+num_episodes = 10
 MAX_TURNS = 500
 
 for episode in range(num_episodes):
@@ -49,23 +55,7 @@ for episode in range(num_episodes):
         avg = sum(rewards_per_episode[-10:]) / 10
         print(f"Average reward last 10 episodes: {avg:.2f}")
 
-def replay_game(agent, env):
-    agent.model.eval()
-    state = env.reset()
-    state_tensor = env.state_to_tensor(state)
-    done = False
-    while not done:
-        valid = env.get_valid_actions()
-        valid_action_indices = [env.actions.index(a) for a in valid]
-        action_idx = agent.select_action(state_tensor, valid_action_indices)
-        action = env.actions[action_idx]
-        print(f"{state['current_player']} chose {action} with resources {state['resources']}")
-        state, reward, done, _ = env.step(action)
-        state_tensor = env.state_to_tensor(state)
-    print("Replay complete.\n")
-    agent.model.train()
-
-replay_game(agent, env)
+torch.save(agent.model.state_dict(), MODEL_PATH)
 
 def moving_average(values, window=10):
     return [np.mean(values[max(0, i-window):(i+1)]) for i in range(len(values))]
