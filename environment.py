@@ -162,7 +162,7 @@ class CatanEnvironment:
                     if self.game.G.nodes[node]['occupied_by'] is None:
                         too_close=any(self.game.G.nodes[n]['occupied_by'] for n in self.game.G.neighbors(node))
                         if not too_close:
-                            self.game._handle_settlement_click(node,None,None)
+                            self.game._handle_settlement_click(node)
                             built=True
                             break
             if not built: reward-=0.2
@@ -186,7 +186,7 @@ class CatanEnvironment:
                                     break
                         
                         if conn and not connects_to_other_settlement:
-                            self.game._handle_road_click((a,b),None,None)
+                            self.game._handle_road_click((a,b))
                             built=True
                             break
             if not built: reward-=0.2
@@ -194,7 +194,7 @@ class CatanEnvironment:
             built=False
             if self.game._can_afford('city'):
                 for node in list(player.settlements):
-                    self.game._handle_city_click(node,None,None)
+                    self.game._handle_city_click(node)
                     built=True
                     break
             if not built: reward-=0.2
