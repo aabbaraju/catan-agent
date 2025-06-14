@@ -19,7 +19,7 @@ if os.path.exists(MODEL_PATH):
     agent.model.load_state_dict(torch.load(MODEL_PATH))
     print(f"Loaded weights from {MODEL_PATH}")
     
-num_episodes = 10
+num_episodes = 5000
 MAX_TURNS = 500
 
 for episode in range(num_episodes):

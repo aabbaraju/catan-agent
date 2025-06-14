@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import torch
 import matplotlib.pyplot as plt
@@ -7,19 +6,36 @@ from game import Game
 from player import Player
 from environment import CatanEnvironment
 from dqn_agent import DQNAgent
+from collections import OrderedDict
 from catanboardVisualizer import render_board
 
-def simulate_bots_vs_bots_visual(delay: float = 0.1):
-    # 1) Initialize two agents with deterministic policy
+def simulate(delay: float = 0.1):
     red_agent = DQNAgent(state_dim=10, action_dim=6, epsilon=0.0, epsilon_min=0.0)
     blue_agent = DQNAgent(state_dim=10, action_dim=6, epsilon=0.0, epsilon_min=0.0)
-    state_dict = torch.load("dqnCatan.pth")
-    red_agent.model.load_state_dict(state_dict)
-    blue_agent.model.load_state_dict(state_dict)
+    MODEL_PATH = "dqnCatan.pth"
+    raw_state = torch.load(MODEL_PATH)
+
+    key_map = {
+        "0.weight":  "fc1.weight",
+        "0.bias":    "fc1.bias",
+        "2.weight":  "fc2.weight",
+        "2.bias":    "fc2.bias",
+        "4.weight":  "fc3.weight",
+        "4.bias":    "fc3.bias",
+    }
+
+    mapped_state = OrderedDict()
+    for old_key, tensor in raw_state.items():
+        if old_key not in key_map:
+            continue
+        new_key = key_map[old_key]
+        mapped_state[new_key] = tensor
+
+    red_agent.model.load_state_dict(mapped_state)
+    blue_agent.model.load_state_dict(mapped_state)
     red_agent.model.eval()
     blue_agent.model.eval()
 
-    # 2) Set up game and environment
     tiles, G = generate_board()
     red_player = Player("Red")
     blue_player = Player("Blue")
@@ -27,7 +43,6 @@ def simulate_bots_vs_bots_visual(delay: float = 0.1):
     game.visual_mode = True
     env = CatanEnvironment(game)
 
-    # 3) Non-blocking GUI setup
     plt.ion()
     fig, ax = plt.subplots(figsize=(11, 10))
     plt.subplots_adjust(right=0.3)
@@ -41,20 +56,17 @@ def simulate_bots_vs_bots_visual(delay: float = 0.1):
     )
     plt.show(block=False)
 
-    # 4) Auto-roll for turn order
     while not game.turn_order_determined:
         env.step("roll")
         render_board(G, tiles, game=game, fig=fig, ax=ax, redraw_only=True)
         plt.pause(delay)
 
-    # 5) Auto-setup for both bots
     while game.setup_phase:
         valid = env.get_valid_actions()
         env.step(valid[0])
         render_board(G, tiles, game=game, fig=fig, ax=ax, redraw_only=True)
         plt.pause(delay)
 
-    # 6) Main game loop with visual updates
     turn_count = 0
     MAX_TURNS = 1000
     while not game.game_over and turn_count < MAX_TURNS:
@@ -72,7 +84,6 @@ def simulate_bots_vs_bots_visual(delay: float = 0.1):
         plt.pause(delay)
         turn_count += 1
 
-    # 7) End of game: final display
     print("Game Over! ", {p.name: p.victory_points() for p in game.players}, "Winner:", max(game.players, key=lambda p: p.victory_points()).name)
     plt.show()
 
@@ -81,4 +92,4 @@ if __name__ == "__main__":
     parser.add_argument("--delay", type=float, default=0.1,
                         help="Pause duration (in seconds) between moves; lower = faster.")
     args = parser.parse_args()
-    simulate_bots_vs_bots_visual(delay=args.delay)
+    simulate(delay=args.delay)
