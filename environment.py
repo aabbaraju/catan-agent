@@ -36,11 +36,13 @@ class CatanEnvironment:
             if status['settlement'] and not status['road']:
                 return ["build_road"]
             return []
+        
         valid = []
         if not self.game.has_rolled[player.name]:
             valid.append("roll")
         else:
             valid.append("pass")
+            
             if self.game._can_afford("settlement", player):
                 for node in self.game.G.nodes:
                     if self.game.G.nodes[node]['occupied_by'] is None:
@@ -49,25 +51,58 @@ class CatanEnvironment:
                             for n in self.game.G.neighbors(node)
                         )
                         if not too_close:
-                            valid.append("build_settlement")
-                            break
+                            connected_to_player = any(
+                                node in road for road in player.roads
+                            )
+                            if connected_to_player or not player.roads: 
+                                valid.append("build_settlement")
+                                break
+            
             if self.game._can_afford("road"):
                 for a, b in self.game.G.edges:
-                    if (a, b) not in player.roads and (b, a) not in player.roads:
-                        connected = (
+                    road_exists = False
+                    for game_player in self.game.players:
+                        if (a, b) in game_player.roads or (b, a) in game_player.roads:
+                            road_exists = True
+                            break
+                    
+                    if not road_exists:
+                        connected_to_current_player = (
                             a in player.settlements or
                             b in player.settlements or
                             any(n in (a, b) for r in player.roads for n in r)
                         )
-                        if connected:
+                        blocks_other_player = False
+                        for other_player in self.game.players:
+                            if other_player.name != player.name:
+                                if a in other_player.settlements:
+                                    player_has_adjacent_road = any(
+                                        a in road for road in player.roads
+                                    )
+                                    if not player_has_adjacent_road:
+                                        blocks_other_player = True
+                                        break
+                                
+                                if b in other_player.settlements:
+                                    player_has_adjacent_road = any(
+                                        b in road for road in player.roads
+                                    )
+                                    if not player_has_adjacent_road:
+                                        blocks_other_player = True
+                                        break
+                        
+                        if connected_to_current_player and not blocks_other_player:
                             valid.append("build_road")
                             break
+            
             if self.game._can_afford("city") and player.settlements:
                 valid.append("build_city")
+            
             for give, qty in player.resources.items():
                 if qty >= 4:
                     valid.append("bank_trade")
                     break
+        
         return list(set(valid))
 
     @staticmethod
@@ -135,9 +170,22 @@ class CatanEnvironment:
             built=False
             if self.game._can_afford('road'):
                 for a,b in self.game.G.edges:
-                    if (a,b) not in player.roads and (b,a) not in player.roads:
+                    road_exists_for_any_player = False
+                    for game_player in self.game.players:
+                        if (a,b) in game_player.roads or (b,a) in game_player.roads:
+                            road_exists_for_any_player = True
+                            break
+                    
+                    if not road_exists_for_any_player:
                         conn=(a in player.settlements or b in player.settlements or any(n in (a,b) for r in player.roads for n in r))
-                        if conn:
+                        connects_to_other_settlement = False
+                        for other_player in self.game.players:
+                            if other_player.name != player.name:
+                                if a in other_player.settlements or b in other_player.settlements:
+                                    connects_to_other_settlement = True
+                                    break
+                        
+                        if conn and not connects_to_other_settlement:
                             self.game._handle_road_click((a,b),None,None)
                             built=True
                             break
